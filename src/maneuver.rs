@@ -125,19 +125,21 @@ impl ManeuverBuilder {
         self.ut = ut;
     }
 
-    pub fn get_maneuver_by_index(&mut self, maneuver_index: usize) {
+    pub fn get_maneuver_by_index(mut self, maneuver_index: usize) -> Self {
         let ship_control = SpaceCenter::new(self.conn.clone().unwrap().client)
             .get_active_vessel()
             .unwrap()
             .get_control()
             .unwrap();
         let node = &ship_control.get_nodes().unwrap()[maneuver_index];
-        self.set_ut(node.get_ut().unwrap());
+        let ut = node.get_ut().unwrap();
+        self.set_ut(ut);
         self.set_delta_vs(
             node.get_prograde().unwrap() as f32,
             node.get_normal().unwrap() as f32,
             node.get_radial().unwrap() as f32,
         );
+        self
     }
 
     pub fn circularize_in(mut self, apsis: Apsis) -> Self {
