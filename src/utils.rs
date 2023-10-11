@@ -25,6 +25,7 @@ pub fn init_apoastro_stream(ship: &Vessel) -> Stream<f64> {
 //     fligh_params.get_pitch_stream().unwrap()
 // }
 
+#[allow(dead_code)]
 pub fn draw_axis(conn: Connection, ref_frame: &ReferenceFrame) -> (Line, Line, Line) {
     let z_line = krpc_client::services::drawing::Drawing::new(conn.client.clone())
         .add_line((0.0, 0.0, 0.0), (0.0, 0.0, 100.0), ref_frame, true)

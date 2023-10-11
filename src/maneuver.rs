@@ -14,6 +14,9 @@ To-do => Maneuver with execute algorithm to the best maneuver
 To-do => ManeuverBuilder has has circularize_in(apsis: Enum) -> Maneuver
 */
 
+pub struct NoExistentManeuver;
+pub struct ExistentManeuver(usize);
+
 pub enum Apsis {
     Apoapsis,
     Periapsis,
@@ -22,17 +25,18 @@ pub struct Maneuver {
     node: Node,
     conn: Option<Connection>,
 }
-pub struct ManeuverBuilder {
+pub struct ManeuverBuilder<M = NoExistentManeuver> {
     conn: Option<Connection>,
     rx_stopper: Option<std::sync::mpsc::Receiver<()>>,
     delta_v_prograde: f32,
     delta_v_normal: f32,
     delta_v_radial: f32,
     ut: f64,
+    existent_maneuver: M,
 }
 impl Maneuver {
     pub fn builder() -> ManeuverBuilder {
-        ManeuverBuilder::new()
+        ManeuverBuilder::<NoExistentManeuver>::new()
     }
 
     pub fn execute(self) {
@@ -97,6 +101,7 @@ impl ManeuverBuilder {
             delta_v_normal: 0.0,
             delta_v_radial: 0.0,
             ut: 0.0,
+            existent_maneuver: NoExistentManeuver,
         }
     }
 
@@ -125,21 +130,8 @@ impl ManeuverBuilder {
         self.ut = ut;
     }
 
-    pub fn get_maneuver_by_index(mut self, maneuver_index: usize) -> Self {
-        let ship_control = SpaceCenter::new(self.conn.clone().unwrap().client)
-            .get_active_vessel()
-            .unwrap()
-            .get_control()
-            .unwrap();
-        let node = &ship_control.get_nodes().unwrap()[maneuver_index];
-        let ut = node.get_ut().unwrap();
-        self.set_ut(ut);
-        self.set_delta_vs(
-            node.get_prograde().unwrap() as f32,
-            node.get_normal().unwrap() as f32,
-            node.get_radial().unwrap() as f32,
-        );
-        self
+    pub fn get_maneuver_by_index(self, maneuver_index: usize) -> ManeuverBuilder<ExistentManeuver> {
+        ManeuverBuilder::<ExistentManeuver>::new(maneuver_index, self.conn.unwrap())
     }
 
     pub fn circularize_in(mut self, apsis: Apsis) -> Self {
@@ -199,6 +191,33 @@ impl ManeuverBuilder {
                 self.delta_v_radial,
             )
             .unwrap();
+        Maneuver {
+            node,
+            conn: self.conn,
+        }
+    }
+}
+
+impl ManeuverBuilder<ExistentManeuver> {
+    pub fn new(maneuver_index: usize, conn: Connection) -> Self {
+        Self {
+            conn: Some(conn),
+            rx_stopper: None,
+            delta_v_prograde: 0.0,
+            delta_v_normal: 0.0,
+            delta_v_radial: 0.0,
+            ut: 0.0,
+            existent_maneuver: ExistentManeuver(maneuver_index),
+        }
+    }
+    pub fn build(self) -> Maneuver {
+        let ship_control = SpaceCenter::new(self.conn.clone().unwrap().client)
+            .get_active_vessel()
+            .unwrap()
+            .get_control()
+            .unwrap();
+        let mut nodes = ship_control.get_nodes().unwrap();
+        let node = nodes.swap_remove(self.existent_maneuver.0);
         Maneuver {
             node,
             conn: self.conn,
