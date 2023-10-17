@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use krpc_client::services::space_center::{SpaceCenter, Control};
 use crate::connection::Connection;
 
@@ -5,11 +7,11 @@ use crate::connection::Connection;
 pub struct LiftOffBuilder {
     t_minus: u8,
     conn: Option<Connection>,
-    rx_stopper: Option<std::sync::mpsc::Receiver<()>>,
+    stopper: Option<Arc<Mutex<bool>>>,
 }
 pub struct LiftOff {
     t_minus: u8,
-    rx_stopper: Option<std::sync::mpsc::Receiver<()>>,
+    stopper: Option<Arc<Mutex<bool>>>,
     ship_control: Control,
 }
 impl LiftOff {
@@ -28,17 +30,20 @@ impl LiftOff {
         for i in (0..self.t_minus).rev() {
             println!("T-{}s", i);
             std::thread::sleep(std::time::Duration::from_secs(1));
-            if self.rx_stopper.is_some() {
-                let rx = self.rx_stopper.as_ref().unwrap();
-                if rx.try_recv().is_ok() {
-                    println!("lift off aborted");
-                    return;
-                }
+            match self.stopper {
+                Some(ref stopper) => {
+                    let stopper = stopper.lock().unwrap();
+                    if *stopper {
+                        println!("lift off aborted");
+                        return;
+                    }
+                },
+                _ => {}
             }
         }
 
         // ativar proximo estagio = Decolar
-        // self.ship_control.activate_next_stage().unwrap();
+        self.ship_control.activate_next_stage().unwrap();
     }
 }
 impl LiftOffBuilder {
@@ -46,7 +51,7 @@ impl LiftOffBuilder {
         Self {
             t_minus: 5,
             conn: None,
-            rx_stopper: None,
+            stopper: None,
         }
     }
 
@@ -55,8 +60,8 @@ impl LiftOffBuilder {
         self
     }
 
-    pub fn rx_stopper(mut self, rx_stopper: std::sync::mpsc::Receiver<()>) -> Self {
-        self.rx_stopper = Some(rx_stopper);
+    pub fn stopper(mut self, stopper: Arc<Mutex<bool>> ) -> Self {
+        self.stopper = Some(stopper);
         self
     }
 
@@ -74,7 +79,7 @@ impl LiftOffBuilder {
         LiftOff {
             t_minus: self.t_minus,
             ship_control,
-            rx_stopper: self.rx_stopper,
+            stopper: self.stopper,
         }
     }
 }

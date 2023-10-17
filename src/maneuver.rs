@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use crate::connection::Connection;
 use krpc_client::services::space_center::{Node, SpaceCenter};
 
@@ -24,10 +26,11 @@ pub enum Apsis {
 pub struct Maneuver {
     node: Node,
     conn: Option<Connection>,
+    stopper: Option<Arc<Mutex<bool>>>,
 }
 pub struct ManeuverBuilder<M = NoExistentManeuver> {
     conn: Option<Connection>,
-    rx_stopper: Option<std::sync::mpsc::Receiver<()>>,
+    stopper: Option<Arc<Mutex<bool>>>,
     delta_v_prograde: f32,
     delta_v_normal: f32,
     delta_v_radial: f32,
@@ -87,6 +90,18 @@ impl Maneuver {
                 .set_throttle(throtle as f32)
                 .unwrap();
             std::thread::sleep(std::time::Duration::from_millis(10));
+            
+            match self.stopper {
+                Some(ref stopper) => {
+                    let stopper = stopper.lock().unwrap();
+                    if *stopper {
+                        auto_pilot.disengage().unwrap();
+                        println!("maneuver aborted");
+                        return;
+                    }
+                }
+                _ => {}
+            }
         }
         ship.get_control().unwrap().set_throttle(0.0).unwrap();
         auto_pilot.disengage().unwrap();
@@ -96,7 +111,7 @@ impl ManeuverBuilder {
     fn new() -> Self {
         Self {
             conn: None,
-            rx_stopper: None,
+            stopper: None,
             delta_v_prograde: 0.0,
             delta_v_normal: 0.0,
             delta_v_radial: 0.0,
@@ -110,8 +125,8 @@ impl ManeuverBuilder {
         self
     }
 
-    pub fn rx_stopper(mut self, rx_stopper: std::sync::mpsc::Receiver<()>) -> Self {
-        self.rx_stopper = Some(rx_stopper);
+    pub fn stopper(mut self, stopper:Arc<Mutex<bool>>) -> Self {
+        self.stopper = Some(stopper);
         self
     }
 
@@ -194,6 +209,7 @@ impl ManeuverBuilder {
         Maneuver {
             node,
             conn: self.conn,
+            stopper: self.stopper,
         }
     }
 }
@@ -202,7 +218,7 @@ impl ManeuverBuilder<ExistentManeuver> {
     pub fn new(maneuver_index: usize, conn: Connection) -> Self {
         Self {
             conn: Some(conn),
-            rx_stopper: None,
+            stopper: None,
             delta_v_prograde: 0.0,
             delta_v_normal: 0.0,
             delta_v_radial: 0.0,
@@ -221,6 +237,7 @@ impl ManeuverBuilder<ExistentManeuver> {
         Maneuver {
             node,
             conn: self.conn,
+            stopper: self.stopper,
         }
     }
 }

@@ -1,8 +1,10 @@
-use crate::connection::Connection;
-use krpc_client::services::space_center::{Control, SpaceCenter, Vessel, AutoPilot};
+use std::sync::{Arc, Mutex};
 
-use krpc_client::stream::Stream;
+use crate::connection::Connection;
+use krpc_client::services::space_center::{AutoPilot, Control, SpaceCenter, Vessel};
+
 use crate::utils::{init_altitude_stream, init_apoastro_stream};
+use krpc_client::stream::Stream;
 
 // todo: implementar maneira de conseguir as streams de altitude e apoastro
 pub struct GravitationalCurve {
@@ -13,14 +15,14 @@ pub struct GravitationalCurve {
     direction: f32,
     grav_curve_initial_altitude: f64,
     final_apoastro: f64,
-    rx_stopper: Option<std::sync::mpsc::Receiver<()>>,
+    stopper: Option<Arc<Mutex<bool>>>,
 }
 pub struct GravitationalCurveBuilder {
     conn: Option<Connection>,
     direction: f32,
     grav_curve_initial_altitude: f64,
     final_apoastro: f64,
-    rx_stopper: Option<std::sync::mpsc::Receiver<()>>,
+    stopper: Option<Arc<Mutex<bool>>>,
 }
 impl GravitationalCurve {
     pub fn builder() -> GravitationalCurveBuilder {
@@ -65,11 +67,16 @@ impl GravitationalCurve {
                     }
                 }
             }
-            let rx = self.rx_stopper.as_ref().unwrap();
-            if rx.try_recv().is_ok() {
-                auto_pilot.disengage().unwrap();
-                println!("lift off aborted");
-                return;
+            match self.stopper {
+                Some(ref stopper) => {
+                    let stopper = stopper.lock().unwrap();
+                    if *stopper {
+                        auto_pilot.disengage().unwrap();
+                        println!("lift off aborted");
+                        return;
+                    }
+                }
+                _ => {}
             }
         }
         // destaivar piloto automatico
@@ -83,7 +90,7 @@ impl GravitationalCurveBuilder {
             direction: 90.0,
             grav_curve_initial_altitude: 400.0,
             final_apoastro: 80000.0,
-            rx_stopper: None,
+            stopper: None,
         }
     }
 
@@ -107,8 +114,8 @@ impl GravitationalCurveBuilder {
         self
     }
 
-    pub fn rx_stopper(mut self, rx_stopper: std::sync::mpsc::Receiver<()>) -> Self {
-        self.rx_stopper = Some(rx_stopper);
+    pub fn stopper(mut self, stopper: Arc<Mutex<bool>>) -> Self {
+        self.stopper = Some(stopper);
         self
     }
 
@@ -127,7 +134,7 @@ impl GravitationalCurveBuilder {
             direction: self.direction,
             grav_curve_initial_altitude: self.grav_curve_initial_altitude,
             final_apoastro: self.final_apoastro,
-            rx_stopper: self.rx_stopper,
+            stopper: self.stopper,
         }
     }
 }
